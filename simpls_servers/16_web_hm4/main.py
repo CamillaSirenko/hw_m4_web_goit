@@ -40,37 +40,15 @@ class GoitFramework(BaseHTTPRequestHandler):
         size = self.headers.get('Content-Length')
         data = self.rfile.read(int(size))
         
-        data = urllib.parse.unquote_plus(data.decode())
-        parsed_data = dict(item.split("=") for item in data.split("&"))
-
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-        new_entry = {
-            current_time: {
-                "username": parsed_data.get("username"),
-                "message": parsed_data.get("message")
-            }
-        }
-    
-        try:
-            with open('storage/data.json', 'r') as file:
-                data = json.load(file)
-        except FileNotFoundError:
-            data = {}
-
-        data.update(new_entry)
-
-        with open('storage/data.json', 'w') as file:
-            json.dump(data, file, indent=2)
-         
-        json_data = json.dumps(new_entry).encode('utf-8')
-        
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        client_socket.sendto(json_data, (SOCKET_HOST, SOCKET_PORT))
+        client_socket.sendto(data, (SOCKET_HOST, SOCKET_PORT))
         client_socket.close()
 
         self.send_response(302)
-        self.send_header('Location', '/contact')
+        self.send_header('Location', '/')
         self.end_headers()
+        
+        
 
     def send_html(self, filename, status_code=200):
         self.send_response(status_code)
@@ -108,8 +86,18 @@ def save_data_from_form(data):
     parse_data = urllib.parse.unquote_plus(data.decode())
     try:
         parse_dict = {key: value for key, value in [el.split('=') for el in parse_data.split('&')]}
-        with open('data/data.json', 'w', encoding='utf-8') as file:
-            json.dump(parse_dict, file, ensure_ascii=False, indent=4)
+        existing_data = {}
+
+        try:
+            with open('storage/data.json', 'r', encoding='utf-8') as file:
+                existing_data = json.load(file)
+        except FileNotFoundError:
+            pass   
+
+        existing_data.update(parse_dict)
+
+        with open('storage/data.json', 'w', encoding='utf-8') as file:
+            json.dump(existing_data, file, ensure_ascii=False, indent=4)
     except ValueError as err:
         logging.error(err)
     except OSError as err:
@@ -121,9 +109,10 @@ def run_socket_server(SOCKET_HOST, SOCKET_PORT):
     server_socket.bind(( SOCKET_HOST, SOCKET_PORT))
     logging.info("Starting socket server")
     try:
-        data, address = server_socket.recvfrom(BUFFER_SIZE)
-        logging.info(f"Socket received {address}: {data}")
-        save_data_from_form(data)
+        while True:
+            data, address = server_socket.recvfrom(BUFFER_SIZE)
+            logging.info(f"Socket received {address}: {data.decode()}")
+            save_data_from_form(data)
     except ValueError as err:
         logging.error(err)
     except TypeError as err:
